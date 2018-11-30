@@ -1,0 +1,26 @@
+{
+  "name": "turbo-adjudicator",
+  "version": "0.0.1",
+  "repository": "https://github.com/magmo/turbo-adjudicator.git",
+  "author": "Andrew Stewart <andrew.gord.stewart@gmail.com>",
+  "license": "MIT",
+  "private": true,
+  "dependencies": {
+    "ethers": "^4.0.15",
+    "fmg-core": "^0.2.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^23.3.10",
+    "@types/node": "^10.12.10",
+    "@types/web3": "^1.0.12",
+    "dotenv": "^6.1.0",
+    "ganache-cli": "^6.1.8",
+    "jest": "^23.6.0",
+    "magmo-devtools": "git+https://github.com/magmo/devtools.git",
+    "truffle": "^5.0.0-next.17",
+    "ts-jest": "^23.10.5",
+    "tslint": "^5.11.0",
+    "tslint-config-prettier": "^1.17.0",
+    "typescript": "^3.2.1"
+  }
+}
