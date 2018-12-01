@@ -12,4 +12,15 @@ contract TurboAdjudicator {
         address gameLibrary;
         uint challengeDuration;
     }
+
+    mapping(address => uint) public allocations;
+
+    function deposit(address destination, uint amount) public payable {
+        require(
+            amount == msg.value,
+            "deposit amount must match msg.value"
+        );
+
+        allocations[destination] = allocations[destination] + amount;
+    }
 }

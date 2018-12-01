@@ -19,7 +19,14 @@ describe('SimpleAdjudicator', () => {
     turbo = await ContractFactory.fromSolidity(SimpleAdjudicatorArtifact, wallet).deploy();
   });
 
-  it("works", () => {
-      expect(turbo).toBeTruthy();
+  it("handles deposits", async () => {
+    await turbo.deposit(channel.id, 20, { value: 20 });
+    const allocatedAmount  = await turbo.allocations(channel.id);
+
+    expect(allocatedAmount.toNumber()).toEqual(20);
+  });
+
+  it("requires deposit amount to match msg.value", async () => {
+    expectRevert(turbo.deposit(channel.id, 20, { value: 10 }), "deposit amount must match msg.value");
   });
 });
