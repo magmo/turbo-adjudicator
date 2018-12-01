@@ -33,7 +33,7 @@
       "src/**/*.{js,jsx,ts,tsx}"
     ],
     "testMatch": [
-      "<rootDir>/src/**/?(*.)(spec|test).(t)s?(x)"
+      "<rootDir>/test/**/?(*.)(spec|test).(t)s?(x)"
     ],
     "testPathIgnorePatterns": [
       "/node_modules/"
