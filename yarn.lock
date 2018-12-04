@@ -1863,7 +1863,7 @@ function-bind@^1.1.1:
   resolved "https://registry.yarnpkg.com/function-bind/-/function-bind-1.1.1.tgz#a56899d3ea3c9bab874bb9773b7c5ede92f4895d"
   integrity sha512-yIovAzMX49sF8Yl58fSCWJ5svSLuaibPxXQJFLmBObTuCr0Mf1KiPopGM9NiFjiYBCbfaa2Fh6breQ6ANVTI0A==
 
-ganache-cli@~6.1.8:
+ganache-cli@6.1.8:
   version "6.1.8"
   resolved "https://registry.yarnpkg.com/ganache-cli/-/ganache-cli-6.1.8.tgz#49a8a331683a9652183f82ef1378d17e1814fcd3"
   integrity sha512-yXzteu4SIgUL31mnpm9j+x6dpHUw0p/nsRVkcySKq0w+1vDxH9jMErP1QhZAJuTVE6ni4nfvGSNkaQx5cD3jfg==
@@ -3179,9 +3179,9 @@ lru-cache@^4.0.1:
     pseudomap "^1.0.2"
     yallist "^2.1.2"
 
-"magmo-devtools@https://github.com/magmo/devtools":
+"magmo-devtools@git+https://github.com/magmo/devtools.git":
   version "0.1.0"
-  resolved "https://github.com/magmo/devtools#e04286964496360d1af943134bfe4620d66968ef"
+  resolved "git+https://github.com/magmo/devtools.git#e04286964496360d1af943134bfe4620d66968ef"
   dependencies:
     detect-port "^1.3.0"
 
