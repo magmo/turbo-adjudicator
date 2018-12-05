@@ -2,7 +2,7 @@ import StateArtifact from '../build/contracts/State.json';
 import RulesArtifact from '../build/contracts/Rules.json';
 import SimpleAdjudicatorArtifact from '../build/contracts/TurboAdjudicator.json';
 import { ContractFactory } from 'ethers';
-import { linkedByteCode, assertRevert, walletWithEthAndProvider as wallet, getNetworkId, ganacheProvider as provider  } from 'magmo-devtools';
+import { linkedByteCode, assertRevert, walletWithEthAndProvider as wallet, getNetworkId, ganacheProvider as provider } from 'magmo-devtools';
 
 import { channel, alice, bob, aliceDest } from "./test-scenarios";
 import { sign } from "fmg-core";
@@ -20,6 +20,11 @@ const MESSAGE = soliditySha3("foo");
 
 function depositTo(destination, amount=DEPOSIT_AMOUNT, value=DEPOSIT_AMOUNT): Promise<any> {
   return turbo.deposit(destination, amount, { value: DEPOSIT_AMOUNT });
+}
+
+async function withdraw(participant, destination, signer=participant, amount=DEPOSIT_AMOUNT): Promise<any> {
+  const sig: any = sign(MESSAGE, signer.privateKey);
+  return turbo.withdraw(participant.address, destination, amount, sig.messageHash, sig.v, sig.r, sig.s, { gasLimit: 3000000 });
 }
 
 describe('SimpleAdjudicator', () => {
@@ -67,20 +72,22 @@ describe('SimpleAdjudicator', () => {
     });
 
     it("reverts when allocations[fromParticipant] > amount but not sent on behalf of fromParticipant", async () => {
+      await delay();
       await depositTo(alice.address);
       assertRevert(withdraw(alice, aliceDest.address, bob), "Withdraw: not authorized by fromParticipant");
+      await delay();
     });
 
     it("reverts when sent on behalf of fromParticipant but allocations[fromParticipant] < amount", async () => {
+      await delay(2000);
       await depositTo(alice.address);
       const allocated = await turbo.allocations(alice.address); // should be at least DEPOSIT_AMOUNT, regardless of test ordering
+      await delay();
       assertRevert(withdraw(alice, aliceDest.address, alice, Number(allocated) + 100000));
     });
   });
 });
 
-async function withdraw(participant, destination, signer=participant, amount=DEPOSIT_AMOUNT): Promise<any> {
-  const sig: any = sign(MESSAGE, signer.privateKey);
-  return turbo.withdraw(participant.address, destination, amount, sig.messageHash, sig.v, sig.r, sig.s, { gasLimit: 3000000 });
-
+function delay(ms=1000) {
+    return new Promise(resolve => { setTimeout(resolve, ms); });
 }
