@@ -1,13 +1,11 @@
 import StateArtifact from '../build/contracts/State.json';
 import RulesArtifact from '../build/contracts/Rules.json';
-import SimpleAdjudicatorArtifact from '../build/contracts/TurboAdjudicator.json';
+import TurboAdjudicatorArtifact from '../build/contracts/TurboAdjudicator.json';
 import { ContractFactory, ethers } from 'ethers';
 import { linkedByteCode, assertRevert, walletWithEthAndProvider as wallet, getNetworkId, ganacheProvider as provider } from 'magmo-devtools';
 
 import { channel, alice, bob, aliceDest } from "./test-scenarios";
 import { sign } from "fmg-core";
-
-import { soliditySha3 } from "web3-utils";
 
 
 jest.setTimeout(20000);
@@ -31,14 +29,14 @@ async function withdraw(participant, destination, signer=participant, amount=DEP
   return turbo.withdraw(participant.address, destination, amount, authorization, sig.v, sig.r, sig.s, { gasLimit: 3000000 });
 }
 
-describe('SimpleAdjudicator', () => {
+describe('TurboAdjudicator', () => {
   beforeAll(async () => {
     const networkId = await getNetworkId();
 
-    SimpleAdjudicatorArtifact.bytecode = linkedByteCode(SimpleAdjudicatorArtifact, StateArtifact, networkId);
-    SimpleAdjudicatorArtifact.bytecode = linkedByteCode(SimpleAdjudicatorArtifact, RulesArtifact, networkId);
+    TurboAdjudicatorArtifact.bytecode = linkedByteCode(TurboAdjudicatorArtifact, StateArtifact, networkId);
+    TurboAdjudicatorArtifact.bytecode = linkedByteCode(TurboAdjudicatorArtifact, RulesArtifact, networkId);
 
-    turbo = await ContractFactory.fromSolidity(SimpleAdjudicatorArtifact, wallet).deploy();
+    turbo = await ContractFactory.fromSolidity(TurboAdjudicatorArtifact, wallet).deploy();
   });
 
   describe("deposit", () => {
