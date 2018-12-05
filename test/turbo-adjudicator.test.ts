@@ -1,7 +1,7 @@
 import StateArtifact from '../build/contracts/State.json';
 import RulesArtifact from '../build/contracts/Rules.json';
 import SimpleAdjudicatorArtifact from '../build/contracts/TurboAdjudicator.json';
-import { ContractFactory } from 'ethers';
+import { ContractFactory, ethers } from 'ethers';
 import { linkedByteCode, assertRevert, walletWithEthAndProvider as wallet, getNetworkId, ganacheProvider as provider } from 'magmo-devtools';
 
 import { channel, alice, bob, aliceDest } from "./test-scenarios";
@@ -12,23 +12,27 @@ import { soliditySha3 } from "web3-utils";
 
 jest.setTimeout(20000);
 let turbo;
+const abiCoder = new ethers.utils.AbiCoder();
 
 const DEPOSIT_AMOUNT = 255; // 
 const SMALL_WITHDRAW_AMOUNT = 10;
 
-const MESSAGE = soliditySha3("foo");
+const AUTH_TYPES = ["address", "uint256", "uint256"];
 
-function depositTo(destination, amount=DEPOSIT_AMOUNT, value=DEPOSIT_AMOUNT): Promise<any> {
-  return turbo.deposit(destination, amount, { value: DEPOSIT_AMOUNT });
+function depositTo(destination, value=DEPOSIT_AMOUNT): Promise<any> {
+  return turbo.deposit(destination, { value });
 }
 
 async function withdraw(participant, destination, signer=participant, amount=DEPOSIT_AMOUNT): Promise<any> {
-  const sig: any = sign(MESSAGE, signer.privateKey);
-  return turbo.withdraw(participant.address, destination, amount, sig.messageHash, sig.v, sig.r, sig.s, { gasLimit: 3000000 });
+  const accountNonce = Number(await turbo.withdrawalNonce(participant.address));
+  const authorization = abiCoder.encode(AUTH_TYPES, [destination, amount, accountNonce]);
+
+  const sig = sign(authorization, signer.privateKey);
+  return turbo.withdraw(participant.address, destination, amount, authorization, sig.v, sig.r, sig.s, { gasLimit: 3000000 });
 }
 
 describe('SimpleAdjudicator', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
     const networkId = await getNetworkId();
 
     SimpleAdjudicatorArtifact.bytecode = linkedByteCode(SimpleAdjudicatorArtifact, StateArtifact, networkId);
@@ -44,15 +48,10 @@ describe('SimpleAdjudicator', () => {
 
       expect(allocatedAmount.toNumber()).toEqual(DEPOSIT_AMOUNT);
     });
-
-    it("requires deposit amount to match msg.value", async () => {
-      // should fail
-      await depositTo(channel.id, DEPOSIT_AMOUNT, DEPOSIT_AMOUNT + 1);
-    });
   });
 
   describe("withdraw", () => {
-    it.skip("works when allocations[fromParticipant] >= amount and sent on behalf of fromParticipant", async () => {
+    it("works when allocations[fromParticipant] >= amount and sent on behalf of fromParticipant", async () => {
       await depositTo(alice.address);
 
       const startBal = await provider.getBalance(aliceDest.address);

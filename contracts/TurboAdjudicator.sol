@@ -1,18 +1,7 @@
 pragma solidity ^0.5.0;
 pragma experimental ABIEncoderV2;
 
-import "fmg-core/contracts/State.sol";
-import "fmg-core/contracts/Rules.sol";
-import "fmg-core/contracts/ForceMoveGame.sol";
-
 contract TurboAdjudicator {
-    using State for State.StateStruct;
-
-    struct Channel {
-        address gameLibrary;
-        uint challengeDuration;
-    }
-
     struct Authorization {
         // *********************************************************
         // WARNING
@@ -39,25 +28,19 @@ contract TurboAdjudicator {
     mapping(address => uint) public allocations;
     mapping(address => uint) public withdrawalNonce;
 
-    function deposit(address destination, uint amount) public payable {
-        require(
-            amount == msg.value,
-            "deposit amount must match msg.value"
-        );
-
-        allocations[destination] = allocations[destination] + amount;
+    function deposit(address destination) public payable {
+        allocations[destination] = allocations[destination] + msg.value;
     }
 
-    function withdraw(address participant, address payable destination, uint amount, bytes32 signedMessage, uint8 _v, bytes32 _r, bytes32 _s) public payable {
+    function withdraw(address participant, address payable destination, uint amount, bytes memory encodedAuthorization, uint8 _v, bytes32 _r, bytes32 _s) public payable {
         require(
             allocations[participant] >= amount,
             "Withdraw: overdrawn"
         );
         require(
-            ecrecover(signedMessage, _v, _r, _s) == participant,
+            recoverSigner(encodedAuthorization, _v, _r, _s) == participant,
             "Withdraw: not authorized by fromParticipant"
         );
-
 
         Authorization memory authorization = Authorization(
             destination,
@@ -65,12 +48,27 @@ contract TurboAdjudicator {
             withdrawalNonce[participant]
         );
         require(
-            signedMessage == keccak256(abi.encode(authorization)),
+            keccak256(encodedAuthorization) == keccak256(abi.encode(authorization)),
             "Withdraw: invalid authorization"
         );
 
         withdrawalNonce[participant] = withdrawalNonce[participant] + 1;
         allocations[participant] = allocations[participant] - amount;
         destination.transfer(amount);
+    }
+
+    function recover(bytes32 m, uint8 v, bytes32 r, bytes32 s) public pure returns (address) {
+        return ecrecover(m, v, r, s);
+    }
+
+    function recoverSigner(bytes memory _d, uint8 _v, bytes32 _r, bytes32 _s) internal pure returns(address) {
+        bytes memory prefix = "\x19Ethereum Signed Message:\n32";
+        bytes32 h = keccak256(_d);
+
+        bytes32 prefixedHash = keccak256(abi.encodePacked(prefix, h));
+
+        address a = ecrecover(prefixedHash, _v, _r, _s);
+
+        return(a);
     }
 }
