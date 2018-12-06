@@ -5,9 +5,9 @@ import { ContractFactory, ethers } from 'ethers';
 import {
   linkedByteCode,
   assertRevert,
-  walletWithEthAndProvider as wallet,
+  getWalletWithEthAndProvider,
   getNetworkId,
-  ganacheProvider as provider,
+  getGanacheProvider,
 } from 'magmo-devtools';
 
 import { channel, alice, bob, aliceDest, resolution } from './test-scenarios';
@@ -16,6 +16,8 @@ import { sign } from 'fmg-core';
 jest.setTimeout(20000);
 let turbo;
 const abiCoder = new ethers.utils.AbiCoder();
+const wallet = getWalletWithEthAndProvider();
+const provider = getGanacheProvider();
 
 const DEPOSIT_AMOUNT = 255; //
 const SMALL_WITHDRAW_AMOUNT = 10;
