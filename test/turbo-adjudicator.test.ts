@@ -73,6 +73,7 @@ describe('TurboAdjudicator', () => {
 
       const startBal = await provider.getBalance(aliceDest.address);
       const allocatedAtStart = await turbo.allocations(alice.address); // should be at least DEPOSIT_AMOUNT, regardless of test ordering
+      const withdrawalNonce = await turbo.withdrawalNonce(alice.address);
 
       // Alice can withdraw some of her money
       await withdraw(alice, aliceDest.address, alice, SMALL_WITHDRAW_AMOUNT);
@@ -83,6 +84,7 @@ describe('TurboAdjudicator', () => {
       expect(Number(await turbo.allocations(alice.address))).toEqual(
         Number(allocatedAtStart - SMALL_WITHDRAW_AMOUNT),
       );
+      expect(await turbo.withdrawalNonce(alice.address)).toEqual(withdrawalNonce.add(1));
 
       // Alice should be able to withdraw all remaining funds allocated to her.
       await withdraw(alice, aliceDest.address, alice, allocatedAtStart - SMALL_WITHDRAW_AMOUNT);
@@ -91,6 +93,7 @@ describe('TurboAdjudicator', () => {
         Number(await provider.getBalance(aliceDest.address)),
       );
       expect(Number(await turbo.allocations(alice.address))).toEqual(0);
+      expect(await turbo.withdrawalNonce(alice.address)).toEqual(withdrawalNonce.add(2));
     });
 
     it('reverts when allocations[fromParticipant] > amount but not sent on behalf of fromParticipant', async () => {
