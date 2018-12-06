@@ -128,6 +128,10 @@ contract TurboAdjudicator {
         outcomes[channel] = outcome;
     }
 
+    function getOutcome(address channel) public view returns (Outcome memory) {
+        return outcomes[channel];
+    }
+
     function outcomesEqual(Outcome memory a, Outcome memory b) internal pure returns (bool) {
         return equals(abi.encode(a), abi.encode(b));
     }
