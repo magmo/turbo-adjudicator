@@ -17,7 +17,9 @@ export const channel = new Channel(
     ethers.Wallet.createRandom().address,
     0,
     [alice.address, bob.address]
-);const defaults = { channel, resolution, gameCounter: 0 };
+);
+
+const defaults = { channel, resolution, gameCounter: 0 };
 
 export const state0 = CountingGame.gameState({
     ...defaults,
@@ -58,13 +60,10 @@ export const state2alt = CountingGame.gameState({
 
 export function conclusionProof(conclusionResolution?: BN[]) {
     //
-    const _channel = randomChannel();
     const aliceState = state0;
     const bobState = state1;
     aliceState.stateType = State.StateType.Conclude;
     bobState.stateType = State.StateType.Conclude;
-    aliceState.channel = _channel;
-    bobState.channel = _channel;
     if (conclusionResolution) {
         aliceState.resolution = conclusionResolution;
         bobState.resolution = conclusionResolution;
