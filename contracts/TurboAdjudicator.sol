@@ -1,7 +1,11 @@
 pragma solidity ^0.5.0;
 pragma experimental ABIEncoderV2;
+import "fmg-core/contracts/State.sol";
+import "fmg-core/contracts/Rules.sol";
 
 contract TurboAdjudicator {
+    using State for State.StateStruct;
+
     struct Authorization {
         // *********************************************************
         // WARNING
@@ -28,12 +32,31 @@ contract TurboAdjudicator {
     struct Outcome {
         address[] destination;
         uint[] amount;
-        bool isFinal;
+        uint256 finalizedAt;
+        State.StateStruct challengeState;
+    }
+    struct Signature {
+        uint8 v;
+        bytes32 r;
+        bytes32 s;
+    }
+    struct ConclusionProof {
+        State.StateStruct penultimateState;
+        Signature penultimateSignature;
+        State.StateStruct ultimateState;
+        Signature ultimateSignature;
     }
 
     mapping(address => uint) public allocations;
     mapping(address => uint) public withdrawalNonce;
     mapping(address => Outcome) public outcomes;
+
+    // TODO: Challenge duration should depend on the channel
+    uint constant CHALLENGE_DURATION = 5;
+
+    // **************
+    // Eth Management
+    // **************
 
     function deposit(address destination) public payable {
         allocations[destination] = allocations[destination] + msg.value;
@@ -66,8 +89,12 @@ contract TurboAdjudicator {
 
     function transfer(address channel, address destination, uint amount) public {
         require(
-            outcomes[channel].isFinal,
+            outcomes[channel].finalizedAt < now,
             "Transfer: outcome must be final"
+        );
+        require(
+            outcomes[channel].finalizedAt > 0,
+            "Transfer: outcome must be present"
         );
 
         uint256 pending = 0;
@@ -94,7 +121,8 @@ contract TurboAdjudicator {
                 Outcome memory updatedOutcome = Outcome(
                     outcomes[channel].destination,
                     updatedAmounts,
-                    outcomes[channel].isFinal
+                    outcomes[channel].finalizedAt,
+                    outcomes[channel].challengeState // Once the outcome is finalized, 
                 );
                 outcomes[channel] = updatedOutcome;
                 return;
@@ -104,7 +132,130 @@ contract TurboAdjudicator {
         revert("Transfer: destination not in outcome");
     }
 
+    // ******
+    // Events
+    // ******
+
+    event ChallengeCreated(
+        address channelId,
+        State.StateStruct state,
+        uint256 finalizedAt
+    );
+    event Concluded(address channelId);
+
+    // **********************
+    // ForceMove Protocol API
+    // **********************
+
+    function conclude(ConclusionProof memory proof) public {
+        _conclude(proof);
+    }
+
+    function forceMove(
+        State.StateStruct memory agreedState,
+        State.StateStruct memory challengeState,
+        Signature[] memory signatures
+    ) public {
+        require(
+            !isChannelClosed(agreedState.channelId()),
+            "ForceMove: channel must be open"
+        );
+        require(
+            moveAuthorized(agreedState, signatures[0]),
+            "ForceMove: agreedState not authorized"
+        );
+        require(
+            moveAuthorized(challengeState, signatures[1]),
+            "ForceMove: challengeState not authorized"
+        );
+        require(
+            Rules.validTransition(agreedState, challengeState)
+        );
+
+        address channelId = agreedState.channelId();
+
+        outcomes[channelId] = Outcome(
+            challengeState.participants,
+            challengeState.resolution,
+            now + CHALLENGE_DURATION,
+            challengeState
+        );
+
+        emit ChallengeCreated(
+            channelId,
+            challengeState,
+            now
+        );
+    }
+
+    // ************************
+    // ForceMove Protocol Logic
+    // ************************
+
+    function _conclude(ConclusionProof memory proof) internal {
+        address channelId = proof.penultimateState.channelId();
+        require(
+            (outcomes[channelId].finalizedAt > now || outcomes[channelId].finalizedAt == 0),
+            "Conclude: channel must not be finalized"
+        );
+
+        outcomes[channelId] = Outcome(
+            proof.penultimateState.participants,
+            proof.penultimateState.resolution,
+            now,
+            proof.penultimateState
+        );
+        emit Concluded(channelId);
+    }
+
+    // ****************
     // Helper functions
+    // ****************
+
+    function isChannelClosed(address channel) internal view returns (bool) {
+        return outcomes[channel].finalizedAt < now && outcomes[channel].finalizedAt > 0;
+    }
+
+    function outcomesEqual(Outcome memory a, Outcome memory b) internal pure returns (bool) {
+        return equals(abi.encode(a), abi.encode(b));
+    }
+
+    function equals(bytes memory a, bytes memory b) internal pure returns (bool) {
+        return keccak256(a) == keccak256(b);
+    }
+
+    function moveAuthorized(State.StateStruct memory _state, Signature memory signature) public pure returns (bool){
+        return _state.mover() == recoverSigner(
+            abi.encode(_state),
+            signature.v,
+            signature.r,
+            signature.s
+        );
+    }
+
+    function recoverSigner(bytes memory _d, uint8 _v, bytes32 _r, bytes32 _s) public pure returns(address) {
+        bytes memory prefix = "\x19Ethereum Signed Message:\n32";
+        bytes32 h = keccak256(_d);
+
+        bytes32 prefixedHash = keccak256(abi.encodePacked(prefix, h));
+
+        address a = ecrecover(prefixedHash, _v, _r, _s);
+
+        return(a);
+    }
+
+    // *********************************
+    // Helper functions -- TO BE REMOVED
+    // *********************************
+
+    function channelId(State.StateStruct memory state) public pure returns (address) {
+        return state.channelId();
+    }
+
+    function outcomeFinal(address channel) public view returns (bool) {
+        return outcomes[channel].finalizedAt > 0 && outcomes[channel].finalizedAt < now;
+    }
+
     function setOutcome(address channel, Outcome memory outcome) public {
         // Temporary helper function to set outcomes for testing
         // Will eventually be internal
@@ -132,23 +283,4 @@ contract TurboAdjudicator {
         return outcomes[channel];
     }
 
-    function outcomesEqual(Outcome memory a, Outcome memory b) internal pure returns (bool) {
-        return equals(abi.encode(a), abi.encode(b));
-    }
-
-    function equals(bytes memory a, bytes memory b) internal pure returns (bool) {
-        return keccak256(a) == keccak256(b);
-    }
-
-
-    function recoverSigner(bytes memory _d, uint8 _v, bytes32 _r, bytes32 _s) internal pure returns(address) {
-        bytes memory prefix = "\x19Ethereum Signed Message:\n32";
-        bytes32 h = keccak256(_d);
-
-        bytes32 prefixedHash = keccak256(abi.encodePacked(prefix, h));
-
-        address a = ecrecover(prefixedHash, _v, _r, _s);
-
-        return(a);
-    }
 }
