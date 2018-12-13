@@ -5,23 +5,24 @@ import { ContractFactory, ethers } from 'ethers';
 import {
   linkedByteCode,
   assertRevert,
-  getWalletWithEthAndProvider,
   getNetworkId,
   getGanacheProvider,
+  expectEvent,
 } from 'magmo-devtools';
 
-import { channel, alice, bob, aliceDest, resolution } from './test-scenarios';
+import { channel, alice, bob, aliceDest, resolution, conclusionProof, state0, state1, differentResolution, state3 } from './test-scenarios';
 import { sign } from 'fmg-core';
 
 jest.setTimeout(20000);
 let turbo;
 const abiCoder = new ethers.utils.AbiCoder();
-const wallet = getWalletWithEthAndProvider();
 const provider = getGanacheProvider();
+const providerSigner = provider.getSigner();
 
 const DEPOSIT_AMOUNT = 255; //
 const SMALL_WITHDRAW_AMOUNT = 10;
 
+let nullOutcome;
 const AUTH_TYPES = ['address', 'uint256', 'uint256'];
 
 function depositTo(destination, value = DEPOSIT_AMOUNT): Promise<any> {
@@ -50,23 +51,30 @@ async function withdraw(
   );
 }
 
+async function setupContracts() {
+  const networkId = await getNetworkId();
+
+  TurboAdjudicatorArtifact.bytecode = linkedByteCode(
+    TurboAdjudicatorArtifact,
+    StateArtifact,
+    networkId,
+  );
+  TurboAdjudicatorArtifact.bytecode = linkedByteCode(
+    TurboAdjudicatorArtifact,
+    RulesArtifact,
+    networkId,
+  );
+
+  turbo = await ContractFactory.fromSolidity(TurboAdjudicatorArtifact, providerSigner).deploy();
+  await turbo.deployed();
+
+  const unwrap = ({challengeState, finalizedAt }) => ({challengeState, finalizedAt});
+  nullOutcome = { amount: [], destination: [], ...unwrap(await turbo.outcomes(turbo.address))};
+}
+
 describe('TurboAdjudicator', () => {
   beforeAll(async () => {
-    const networkId = await getNetworkId();
-
-    TurboAdjudicatorArtifact.bytecode = linkedByteCode(TurboAdjudicatorArtifact, StateArtifact, networkId);
-    TurboAdjudicatorArtifact.bytecode = linkedByteCode(TurboAdjudicatorArtifact, RulesArtifact, networkId);
-
-    turbo = await ContractFactory.fromSolidity(TurboAdjudicatorArtifact, wallet).deploy();
-  });
-
-  describe('deposit', () => {
-    it('works', async () => {
-      await depositTo(channel.channelType);
-      const allocatedAmount = await turbo.allocations(channel.channelType);
-
-      expect(allocatedAmount.toNumber()).toEqual(DEPOSIT_AMOUNT);
-    });
+    await setupContracts(); 
   });
 
   describe('withdraw', () => {
