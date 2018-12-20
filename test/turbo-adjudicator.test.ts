@@ -448,6 +448,179 @@ describe('TurboAdjudicator', () => {
         await delay();
       });
     });
+
+    describe('refute', () => {
+      const agreedState = state0;
+      const challengeState = state1;
+      const refutationState = state3;
+  
+      const { r: r0, s: s0, v: v0 } = sign(agreedState.toHex(), challengee.privateKey);
+      const { r: r1, s: s1, v: v1 } = sign(challengeState.toHex(), challenger.privateKey);
+      const signatures = [
+        { r: r0, s: s0, v: v0 },
+        { r: r1, s: s1, v: v1 },
+      ];
+    
+      const { r: r2, s: s2, v: v2 } = sign(refutationState.toHex(), challenger.privateKey);
+      const refutationSignature = { r: r2, s: s2, v: v2 };
+
+      async function runBeforeRefute() {
+        await (await turbo.setOutcome(channel.id, nullOutcome)).wait();
+        // challenge doesn't exist at start of game
+        expect(
+          await turbo.isChannelClosed(channel.id)
+        ).toBe(false);
+    
+        await turbo.forceMove(
+          agreedState.args,
+          challengeState.args,
+          signatures,
+        );
+        // challenge should be created
+        expect(await turbo.isChallengeOngoing(channel.id)).toBe(true);
+      }
+
+      it('works', async () => {
+        await runBeforeRefute();
+    
+        const { emitterWitness, eventPromise } = expectEvent(turbo, 'Refuted');
+        await turbo.refute(refutationState.asEthersObject, refutationSignature);
+    
+        await eventPromise;
+        expect(emitterWitness).toBeCalled();
+
+        // "challenge should be cancelled
+        expect(await turbo.isChallengeOngoing(channel.id)).toBe(false);
+      });
+
+      it('reverts when the channel is closed', async () => {
+        await runBeforeRefute();
+
+        // expired challenge exists at start of game
+        await increaseTime(DURATION.days(2), provider);
+        expect(
+          await turbo.isChannelClosed(channel.id)
+        ).toBe(true);
+    
+        assertRevert(
+          turbo.refute(refutationState.asEthersObject, refutationSignature),
+          "Refute: channel must be open"
+        );
+        await delay();
+      });
+
+      it('reverts when the refutationState is not signed', async () => {
+        await runBeforeRefute();
+
+        assertRevert(
+          turbo.refute(refutationState.asEthersObject, signatures[0]),
+          "Refute: move must be authorized"
+        );
+        await delay();
+      });
+
+      it('reverts when the refutationState is invalid', async () => {
+        await runBeforeRefute();
+
+        const invalidRefutationState = state3;
+        invalidRefutationState.turnNum = agreedState.turnNum - 1;
+      
+        const { r: r3, s: s3, v: v3 } = sign(invalidRefutationState.toHex(), challenger.privateKey);
+        const invalidRefutationSignature = { r: r3, s: s3, v: v3 };
+
+        assertRevert(
+          turbo.refute(invalidRefutationState.asEthersObject, invalidRefutationSignature),
+          "the refutationState must have a higher nonce"
+        );
+        await delay();
+      });
+    });
+
+    describe('respondWithMove', () => {
+      const agreedState = state0;
+      const challengeState = state1;
+      const responseState = state2;
+  
+      const { r: r0, s: s0, v: v0 } = sign(agreedState.toHex(), challengee.privateKey);
+      const { r: r1, s: s1, v: v1 } = sign(challengeState.toHex(), challenger.privateKey);
+      const signatures = [
+        { r: r0, s: s0, v: v0 },
+        { r: r1, s: s1, v: v1 },
+      ];
+    
+      const { r: r2, s: s2, v: v2 } = sign(responseState.toHex(), challengee.privateKey);
+      const responseSignature = { r: r2, s: s2, v: v2 };
+
+      async function runBeforeRespond() {
+        await (await turbo.setOutcome(channel.id, nullOutcome)).wait();
+        // challenge doesn't exist at start of game
+        expect(
+          await turbo.isChannelClosed(channel.id)
+        ).toBe(false);
+    
+        await turbo.forceMove(
+          agreedState.args,
+          challengeState.args,
+          signatures,
+        );
+        // challenge should be created
+        expect(await turbo.isChallengeOngoing(channel.id)).toBe(true);
+      }
+
+      it('works', async () => {
+        await runBeforeRespond();
+    
+        const { emitterWitness, eventPromise } = expectEvent(turbo, 'RespondedWithMove');
+        await turbo.respondWithMove(responseState.asEthersObject, responseSignature);
+    
+        await eventPromise;
+        expect(emitterWitness).toBeCalled();
+
+        // "challenge should be cancelled
+        expect(await turbo.isChallengeOngoing(channel.id)).toBe(false);
+      });
+
+      it('reverts when the channel is closed', async () => {
+        await runBeforeRespond();
+
+        // expired challenge exists at start of game
+        await increaseTime(DURATION.days(2), provider);
+        expect(
+          await turbo.isChannelClosed(channel.id)
+        ).toBe(true);
+    
+        assertRevert(
+          turbo.respondWithMove(responseState.asEthersObject, responseSignature),
+          "RespondWithMove: channel must be open"
+        );
+        await delay();
+      });
+
+      it('reverts when the responseState is not signed', async () => {
+        await runBeforeRespond();
+
+        assertRevert(
+          turbo.refute(responseState.asEthersObject, signatures[0]),
+          "RespondWithMove: move must be authorized"
+        );
+        await delay();
+      });
+
+      it('reverts when the responseState is invalid', async () => {
+        await runBeforeRespond();
+
+        const invalidResponseState = state3;
+      
+        const { r: r3, s: s3, v: v3 } = sign(invalidResponseState.toHex(), challenger.privateKey);
+        const invalidResponseSignature = { r: r3, s: s3, v: v3 };
+
+        assertRevert(
+          turbo.respondWithMove(invalidResponseState.asEthersObject, invalidResponseSignature),
+          "the responseState must have a higher nonce"
+        );
+        await delay();
+      });
+    });
   });
 });
 
