@@ -8,9 +8,11 @@ import {
   getNetworkId,
   getGanacheProvider,
   expectEvent,
+  increaseTime,
+  DURATION
 } from 'magmo-devtools';
 
-import { channel, alice, bob, aliceDest, resolution, conclusionProof, state0, state1, differentResolution, state3 } from './test-scenarios';
+import { channel, alice, bob, aliceDest, resolution, conclusionProof, state0, state1, state2, state3 } from './test-scenarios';
 import { sign } from 'fmg-core';
 
 jest.setTimeout(20000);
@@ -287,8 +289,19 @@ describe('TurboAdjudicator', () => {
 
   describe('ForceMove Protocol', () => {
     const proof = conclusionProof();
-    beforeEach(async () => {
+    const challengee = alice;
+    const challenger = bob;
+
+    beforeAll(async () => {
       await setupContracts();
+    });
+
+    beforeEach(async () => {
+      await (await turbo.setOutcome(channel.id, nullOutcome)).wait();
+      // challenge doesn't exist at start of game
+      expect(
+        await turbo.isChannelClosed(channel.id)
+      ).toBe(false);
     });
 
     describe('conclude', () => {
@@ -324,8 +337,6 @@ describe('TurboAdjudicator', () => {
 
     describe('forceMove', () => {
       it('emits ForceMove', async () => {
-        const challengee = alice;
-        const challenger = bob;
         const agreedState = state0;
         const challengeState = state1;
     
@@ -356,8 +367,6 @@ describe('TurboAdjudicator', () => {
       });
 
       it('reverts when the move is not valid', async () => {
-        const challengee = alice;
-        const challenger = bob;
         const agreedState = state0;
         const challengeState = state3;
 
@@ -383,8 +392,6 @@ describe('TurboAdjudicator', () => {
       });
 
       it('reverts when the states are not signed', async () => {
-        const challengee = alice;
-        const challenger = bob;
         const agreedState = state0;
         const challengeState = state1;
 
@@ -410,8 +417,6 @@ describe('TurboAdjudicator', () => {
       });
 
       it('reverts when the channel is closed', async () => {
-        const challengee = alice;
-        const challenger = bob;
         const agreedState = state0;
         const challengeState = state1;
 
