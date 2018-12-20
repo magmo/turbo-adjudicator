@@ -62,3 +62,6 @@ typings/
 
 # truffle output
 build
+
+# temporary ifles
+*.bak
