@@ -44,6 +44,16 @@ export const state3 = CountingGame.gameState({
     turnNum: 9,
     gameCounter: 4,
 });
+export const state4 = CountingGame.concludeState({
+    channel,
+    resolution,
+    turnNum: 8,
+});
+export const state5 = CountingGame.concludeState({
+    channel,
+    resolution,
+    turnNum: 9,
+});
 
 export const state1alt = CountingGame.gameState({
     channel,
@@ -58,12 +68,12 @@ export const state2alt = CountingGame.gameState({
     gameCounter: 3,
 });
 
+
+
 export function conclusionProof(conclusionResolution?: BN[]) {
     //
-    const aliceState = state0;
-    const bobState = state1;
-    aliceState.stateType = State.StateType.Conclude;
-    bobState.stateType = State.StateType.Conclude;
+    const aliceState = state4;
+    const bobState = state5;
     if (conclusionResolution) {
         aliceState.resolution = conclusionResolution;
         bobState.resolution = conclusionResolution;
