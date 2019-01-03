@@ -1,6 +1,3 @@
-import StateArtifact from '../build/contracts/State.json';
-import RulesArtifact from '../build/contracts/Rules.json';
-import TurboAdjudicatorArtifact from '../build/contracts/TurboAdjudicator.json';
 import { ContractFactory, ethers } from 'ethers';
 import {
   linkedByteCode,
@@ -11,12 +8,16 @@ import {
   increaseTime,
   DURATION
 } from 'magmo-devtools';
+import { sign, Channel, CountingGame } from 'fmg-core';
 
-import { channel, alice, bob, aliceDest, resolution, conclusionProof, state0, state1, state2, state3 } from './test-scenarios';
-import { sign } from 'fmg-core';
+import StateArtifact from '../build/contracts/State.json';
+import RulesArtifact from '../build/contracts/Rules.json';
+import CountingStateArtifact from '../build/contracts/CountingState.json';
+import TurboAdjudicatorArtifact from '../build/contracts/TurboAdjudicator.json';
+import { getCountingGame } from './CountingGame';
 
 jest.setTimeout(20000);
-let turbo;
+let turbo: ethers.Contract;
 const abiCoder = new ethers.utils.AbiCoder();
 const provider = getGanacheProvider();
 const providerSigner = provider.getSigner();
@@ -24,16 +25,16 @@ const providerSigner = provider.getSigner();
 const DEPOSIT_AMOUNT = 255; //
 const SMALL_WITHDRAW_AMOUNT = 10;
 
-let nullOutcome;
+let nullOutcome: {} | any[];
 const AUTH_TYPES = ['address', 'uint256', 'uint256'];
 
-function depositTo(destination, value = DEPOSIT_AMOUNT): Promise<any> {
+function depositTo(destination: any, value = DEPOSIT_AMOUNT): Promise<any> {
   return turbo.deposit(destination, { value });
 }
 
 async function withdraw(
   participant,
-  destination,
+  destination: string,
   signer = participant,
   amount = DEPOSIT_AMOUNT,
 ): Promise<any> {
@@ -56,6 +57,8 @@ async function withdraw(
 async function setupContracts() {
   const networkId = await getNetworkId();
 
+  countingState = ContractFactory.fromSolidity(CountingStateArtifact, providerSigner).attach(CountingStateArtifact.networks[networkId].address);
+
   TurboAdjudicatorArtifact.bytecode = linkedByteCode(
     TurboAdjudicatorArtifact,
     StateArtifact,
@@ -64,6 +67,11 @@ async function setupContracts() {
   TurboAdjudicatorArtifact.bytecode = linkedByteCode(
     TurboAdjudicatorArtifact,
     RulesArtifact,
+    networkId,
+  );
+  TurboAdjudicatorArtifact.bytecode = linkedByteCode(
+    TurboAdjudicatorArtifact,
+    CountingStateArtifact,
     networkId,
   );
 
@@ -75,8 +83,84 @@ async function setupContracts() {
 }
 
 describe('TurboAdjudicator', () => {
+  let aBal: ethers.utils.BigNumber;
+  let bBal: ethers.utils.BigNumber;
+  let resolution;
+  let channel: Channel;
+  let alice: ethers.Wallet;
+  let aliceDest: ethers.Wallet;
+  let bob: ethers.Wallet;
+  let state0;
+  let state1;
+  let state2;
+  let state3;
+  let state4;
+  let state5;
+  let conclusionProof;
+
+  let CountingGameContract;
+
   beforeAll(async () => {
     await setupContracts(); 
+
+    aBal = ethers.utils.parseUnits('6', 'wei');
+    bBal = ethers.utils.parseUnits('4', 'wei');
+    resolution = [aBal, bBal];
+
+    // alice and bob are both funded by startGanache in magmo devtools.
+    alice = new ethers.Wallet("0x5d862464fe9303452126c8bc94274b8c5f9874cbd219789b3eb2128075a76f72");
+    bob = new ethers.Wallet("0xdf02719c4df8b9b8ac7f551fcb5d9ef48fa27eef7a66453879f4d8fdc6e78fb1");
+    aliceDest = ethers.Wallet.createRandom();
+    CountingGameContract = await getCountingGame();
+
+    channel = new Channel(
+        CountingGameContract.address,
+        0,
+        [alice.address, bob.address]
+    );
+
+    const defaults = { channel, resolution, gameCounter: 0 };
+
+    state0 = CountingGame.gameState({
+        ...defaults,
+        gameCounter: 1,
+        turnNum: 6,
+    });
+    state1 = CountingGame.gameState({
+        ...defaults,
+        turnNum: 7,
+        gameCounter: 2,
+    });
+    state2 = CountingGame.gameState({
+        ...defaults,
+        turnNum: 8,
+        gameCounter: 3,
+    });
+    state3 = CountingGame.gameState({
+        ...defaults,
+        turnNum: 9,
+        gameCounter: 4,
+    });
+    state4 = CountingGame.concludeState({
+        ...defaults,
+        turnNum: 8,
+        gameCounter: 4,
+    });
+    state5 = CountingGame.concludeState({
+        ...defaults,
+        turnNum: 9,
+        gameCounter: 4,
+    });
+
+    const { r: r0, s: s0, v: v0 } = sign(state4.toHex(), alice.privateKey);
+    const { r: r1, s: s1, v: v1 } = sign(state5.toHex(), bob.privateKey); 
+
+    conclusionProof = {
+            penultimateState: state4.asEthersObject,
+            ultimateState: state5.asEthersObject,
+            penultimateSignature: { v: v0, r: r0, s: s0 },
+            ultimateSignature: { v: v1, r: r1, s: s1 },
+    };
   });
 
   describe('Eth management', () => {
@@ -288,11 +372,13 @@ describe('TurboAdjudicator', () => {
   });
 
   describe('ForceMove Protocol', () => {
-    const proof = conclusionProof();
-    const challengee = alice;
-    const challenger = bob;
+    let challengee;
+    let challenger;
 
     beforeAll(async () => {
+      challengee = alice;
+      challenger = bob;
+
       await setupContracts();
     });
 
@@ -310,7 +396,7 @@ describe('TurboAdjudicator', () => {
         const { destination: startDestination, amount: startAmount, challengeState: startState, finalizedAt } = await turbo.getOutcome(channel.id);
         expect({ destination: startDestination, amount: startAmount, challengeState: startState, finalizedAt }).toMatchObject(nullOutcome);
 
-        const tx = await turbo.conclude(proof);
+        const tx = await turbo.conclude(conclusionProof);
         await tx.wait();
         await delay();
 
@@ -318,17 +404,17 @@ describe('TurboAdjudicator', () => {
 
         expect(destination).toEqual([alice.address, bob.address]);
         expect(amount).toEqual(resolution);
-        expect(challengeState).toMatchObject(proof.penultimateState);
+        expect(challengeState).toMatchObject(conclusionProof.penultimateState);
         // TODO: figure out how to test finalizedAt
 
       });
 
       it('reverts if it has already been concluded', async () => {
-        const tx = await turbo.conclude(proof);
+        const tx = await turbo.conclude(conclusionProof);
         await tx.wait();
 
         assertRevert(
-          turbo.conclude(proof),
+          turbo.conclude(conclusionProof),
           "Conclude: channel must not be finalized"
         );
         await delay();
@@ -339,7 +425,13 @@ describe('TurboAdjudicator', () => {
       it('emits ForceMove', async () => {
         const agreedState = state0;
         const challengeState = state1;
-    
+        const SolidityGameAttributesType = {
+          "GameAttributes": {
+            "gameCounter": "uint256",
+          },
+        };
+
+
         const { r: r0, s: s0, v: v0 } = sign(agreedState.toHex(), challengee.privateKey);
         const { r: r1, s: s1, v: v1 } = sign(challengeState.toHex(), challenger.privateKey);
         const signatures = [
@@ -348,7 +440,6 @@ describe('TurboAdjudicator', () => {
         ];
 
         expect(await turbo.outcomeFinal(channel.id)).toBe(false);
-    
         const filter = turbo.filters.ChallengeCreated(null, null, null);
     
         const { emitterWitness, eventPromise } = expectEvent(turbo, filter);
@@ -450,19 +541,11 @@ describe('TurboAdjudicator', () => {
     });
 
     describe('refute', () => {
-      const agreedState = state0;
-      const challengeState = state1;
-      const refutationState = state3;
-  
-      const { r: r0, s: s0, v: v0 } = sign(agreedState.toHex(), challengee.privateKey);
-      const { r: r1, s: s1, v: v1 } = sign(challengeState.toHex(), challenger.privateKey);
-      const signatures = [
-        { r: r0, s: s0, v: v0 },
-        { r: r1, s: s1, v: v1 },
-      ];
-    
-      const { r: r2, s: s2, v: v2 } = sign(refutationState.toHex(), challenger.privateKey);
-      const refutationSignature = { r: r2, s: s2, v: v2 };
+      let agreedState;
+      let challengeState;
+      let refutationState;
+      let refutationSignature;
+      let signatures;
 
       async function runBeforeRefute() {
         await (await turbo.setOutcome(channel.id, nullOutcome)).wait();
@@ -491,6 +574,22 @@ describe('TurboAdjudicator', () => {
 
         // "challenge should be cancelled
         expect(await turbo.isChallengeOngoing(channel.id)).toBe(false);
+      });
+
+      beforeAll(() => {
+        agreedState = state0;
+        challengeState = state1;
+        refutationState = state3;
+    
+        const { r: r0, s: s0, v: v0 } = sign(agreedState.toHex(), challengee.privateKey);
+        const { r: r1, s: s1, v: v1 } = sign(challengeState.toHex(), challenger.privateKey);
+        signatures = [
+          { r: r0, s: s0, v: v0 },
+          { r: r1, s: s1, v: v1 },
+        ];
+      
+        const { r: r2, s: s2, v: v2 } = sign(refutationState.toHex(), challenger.privateKey);
+        refutationSignature = { r: r2, s: s2, v: v2 };
       });
 
       it('reverts when the channel is closed', async () => {
@@ -537,19 +636,28 @@ describe('TurboAdjudicator', () => {
     });
 
     describe('respondWithMove', () => {
-      const agreedState = state0;
-      const challengeState = state1;
-      const responseState = state2;
+      let agreedState;
+      let challengeState;
+      let responseState;
   
-      const { r: r0, s: s0, v: v0 } = sign(agreedState.toHex(), challengee.privateKey);
-      const { r: r1, s: s1, v: v1 } = sign(challengeState.toHex(), challenger.privateKey);
-      const signatures = [
-        { r: r0, s: s0, v: v0 },
-        { r: r1, s: s1, v: v1 },
-      ];
+      let signatures;
+      let responseSignature;
+
+      beforeAll(() => {
+        agreedState = state0;
+        challengeState = state1;
+        responseState = state2;
     
-      const { r: r2, s: s2, v: v2 } = sign(responseState.toHex(), challengee.privateKey);
-      const responseSignature = { r: r2, s: s2, v: v2 };
+        const { r: r0, s: s0, v: v0 } = sign(agreedState.toHex(), challengee.privateKey);
+        const { r: r1, s: s1, v: v1 } = sign(challengeState.toHex(), challenger.privateKey);
+        signatures = [
+          { r: r0, s: s0, v: v0 },
+          { r: r1, s: s1, v: v1 },
+        ];
+      
+        const { r: r2, s: s2, v: v2 } = sign(responseState.toHex(), challengee.privateKey);
+        responseSignature = { r: r2, s: s2, v: v2 };
+      });
 
       async function runBeforeRespond() {
         await (await turbo.setOutcome(channel.id, nullOutcome)).wait();
@@ -600,12 +708,12 @@ describe('TurboAdjudicator', () => {
         await runBeforeRespond();
 
         assertRevert(
-          turbo.refute(responseState.asEthersObject, signatures[0]),
+          turbo.respondWithMove(responseState.asEthersObject, signatures[0]),
           "RespondWithMove: move must be authorized"
         );
         await delay();
       });
-
+ 
       it('reverts when the responseState is invalid', async () => {
         await runBeforeRespond();
 
@@ -616,7 +724,7 @@ describe('TurboAdjudicator', () => {
 
         assertRevert(
           turbo.respondWithMove(invalidResponseState.asEthersObject, invalidResponseSignature),
-          "the responseState must have a higher nonce"
+          "Invalid transition: turnNum must increase by 1"
         );
         await delay();
       });
