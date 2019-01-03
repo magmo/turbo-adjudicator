@@ -12,7 +12,6 @@ import { sign, Channel, CountingGame } from 'fmg-core';
 
 import StateArtifact from '../build/contracts/State.json';
 import RulesArtifact from '../build/contracts/Rules.json';
-import CountingStateArtifact from '../build/contracts/CountingState.json';
 import TurboAdjudicatorArtifact from '../build/contracts/TurboAdjudicator.json';
 import { getCountingGame } from './CountingGame';
 
