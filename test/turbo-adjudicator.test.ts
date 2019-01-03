@@ -57,8 +57,6 @@ async function withdraw(
 async function setupContracts() {
   const networkId = await getNetworkId();
 
-  countingState = ContractFactory.fromSolidity(CountingStateArtifact, providerSigner).attach(CountingStateArtifact.networks[networkId].address);
-
   TurboAdjudicatorArtifact.bytecode = linkedByteCode(
     TurboAdjudicatorArtifact,
     StateArtifact,
@@ -67,11 +65,6 @@ async function setupContracts() {
   TurboAdjudicatorArtifact.bytecode = linkedByteCode(
     TurboAdjudicatorArtifact,
     RulesArtifact,
-    networkId,
-  );
-  TurboAdjudicatorArtifact.bytecode = linkedByteCode(
-    TurboAdjudicatorArtifact,
-    CountingStateArtifact,
     networkId,
   );
 

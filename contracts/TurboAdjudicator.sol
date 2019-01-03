@@ -52,7 +52,7 @@ contract TurboAdjudicator {
     mapping(address => Outcome) public outcomes;
 
     // TODO: Challenge duration should depend on the channel
-    uint constant CHALLENGE_DURATION = 5;
+    uint constant CHALLENGE_DURATION = 5 minutes;
 
     // **************
     // Eth Management
@@ -142,6 +142,8 @@ contract TurboAdjudicator {
         uint256 finalizedAt
     );
     event Concluded(address channelId);
+    event Refuted(address channelId, State.StateStruct refutation);
+    event RespondedWithMove(address channelId, State.StateStruct response);
 
     // **********************
     // ForceMove Protocol API
@@ -188,6 +190,61 @@ contract TurboAdjudicator {
         );
     }
 
+    function refute(State.StateStruct memory refutationState, Signature memory signature) public {
+        address channel = refutationState.channelId();
+        require(
+            !isChannelClosed(channel),
+            "Refute: channel must be open"
+        );
+
+        require(
+            moveAuthorized(refutationState, signature),
+            "Refute: move must be authorized"
+        );
+
+        require(
+            Rules.validRefute(outcomes[channel].challengeState, refutationState, signature.v, signature.r, signature.s),
+            "Refute: must be a valid refute"
+        );
+
+        emit Refuted(channel, refutationState);
+        Outcome memory updatedOutcome = Outcome(
+            outcomes[channel].destination,
+            refutationState.resolution,
+            0,
+            refutationState
+        );
+        outcomes[channel] = updatedOutcome;
+    }
+
+    function respondWithMove(State.StateStruct memory responseState, Signature memory signature) public {
+        address channel = responseState.channelId();
+        require(
+            !isChannelClosed(channel),
+            "RespondWithMove: channel must be open"
+        );
+
+        require(
+            moveAuthorized(responseState, signature),
+            "RespondWithMove: move must be authorized"
+        );
+
+        require(
+            Rules.validRespondWithMove(outcomes[channel].challengeState, responseState, signature.v, signature.r, signature.s),
+            "RespondWithMove: must be a valid response"
+        );
+
+        emit RespondedWithMove(channel, responseState);
+
+        Outcome memory updatedOutcome = Outcome(
+            outcomes[channel].destination,
+            responseState.resolution,
+            0,
+            responseState
+        );
+        outcomes[channel] = updatedOutcome;
+    }
+
     // ************************
     // ForceMove Protocol Logic
     // ************************
@@ -212,7 +269,11 @@ contract TurboAdjudicator {
     // Helper functions
     // ****************
 
-    function isChannelClosed(address channel) internal view returns (bool) {
+    function isChallengeOngoing(address channel) public view returns (bool) {
+        return outcomes[channel].finalizedAt > now;
+    }
+
+    function isChannelClosed(address channel) public view returns (bool) {
         return outcomes[channel].finalizedAt < now && outcomes[channel].finalizedAt > 0;
     }
 
@@ -258,18 +319,6 @@ contract TurboAdjudicator {
 
     function setOutcome(address channel, Outcome memory outcome) public {
         // Temporary helper function to set outcomes for testing
-        // Will eventually be internal
-        require(
-            channel != address(this),
-            "Invalid channel"
-        );
-
-        if (!outcomesEqual(outcomes[channel], outcomes[address(this)])) {
-            require(
-                equals(abi.encode(outcome.destination), abi.encode(outcomes[channel].destination)),
-                "destination must match existing outcome"
-            );
-        }
 
         require(
             outcome.destination.length == outcome.amount.length,
