@@ -75,9 +75,11 @@ async function setupContracts() {
 }
 
 describe('TurboAdjudicator', () => {
-  let aBal: ethers.utils.BigNumber;
-  let bBal: ethers.utils.BigNumber;
-  let resolution;
+  const aBal = ethers.utils.parseUnits('6', 'wei');
+  const bBal = ethers.utils.parseUnits('4', 'wei');
+  const resolution = [aBal, bBal];
+  const differentResolution = [bBal, aBal];
+
   let channel: Channel;
   let alice: ethers.Wallet;
   let aliceDest: ethers.Wallet;
@@ -88,16 +90,15 @@ describe('TurboAdjudicator', () => {
   let state3;
   let state4;
   let state5;
+
+  let state1alt;
+  let state2alt;
   let conclusionProof;
 
   let CountingGameContract;
 
   beforeAll(async () => {
     await setupContracts(); 
-
-    aBal = ethers.utils.parseUnits('6', 'wei');
-    bBal = ethers.utils.parseUnits('4', 'wei');
-    resolution = [aBal, bBal];
 
     // alice and bob are both funded by startGanache in magmo devtools.
     alice = new ethers.Wallet("0x5d862464fe9303452126c8bc94274b8c5f9874cbd219789b3eb2128075a76f72");
@@ -142,6 +143,18 @@ describe('TurboAdjudicator', () => {
         ...defaults,
         turnNum: 9,
         gameCounter: 4,
+    });
+    state1alt = CountingGame.gameState({
+      channel,
+      resolution: differentResolution,
+      turnNum: 7,
+      gameCounter: 2,
+    });
+    state2alt = CountingGame.gameState({
+      channel,
+      resolution: differentResolution,
+      turnNum: 8,
+      gameCounter: 3,
     });
 
     const { r: r0, s: s0, v: v0 } = sign(state4.toHex(), alice.privateKey);
@@ -717,6 +730,125 @@ describe('TurboAdjudicator', () => {
         assertRevert(
           turbo.respondWithMove(invalidResponseState.asEthersObject, invalidResponseSignature),
           "Invalid transition: turnNum must increase by 1"
+        );
+        await delay();
+      });
+    });
+
+    describe('alternativeRespondWithMove', () => {
+      let agreedState;
+      let challengeState;
+      let alternativeState;
+      let responseState;
+  
+      let signatures;
+      let alternativeSignature;
+      let responseSignature;
+
+      beforeAll(() => {
+        agreedState = state0;
+        challengeState = state1;
+        alternativeState = state1alt;
+        responseState = state2alt;
+    
+        const { r: r0, s: s0, v: v0 } = sign(agreedState.toHex(), challengee.privateKey);
+        const { r: r1, s: s1, v: v1 } = sign(challengeState.toHex(), challenger.privateKey);
+        signatures = [
+          { r: r0, s: s0, v: v0 },
+          { r: r1, s: s1, v: v1 },
+        ];
+      
+        const { r: r2, s: s2, v: v2 } = sign(alternativeState.toHex(), challenger.privateKey);
+        const { r: r3, s: s3, v: v3 } = sign(responseState.toHex(), challengee.privateKey);
+
+        alternativeSignature = { r: r2, s: s2, v: v2 };
+        responseSignature = { r: r3, s: s3, v: v3 };
+      });
+
+      async function runBeforeAlternativeRespond() {
+        await (await turbo.setOutcome(channel.id, nullOutcome)).wait();
+        // challenge doesn't exist at start of game
+        expect(
+          await turbo.isChannelClosed(channel.id)
+        ).toBe(false);
+    
+        await turbo.forceMove(
+          agreedState.args,
+          challengeState.args,
+          signatures,
+        );
+        // challenge should be created
+        expect(await turbo.isChallengeOngoing(channel.id)).toBe(true);
+      }
+
+      it('works', async () => {
+        await runBeforeAlternativeRespond();
+    
+        const { emitterWitness, eventPromise } = expectEvent(turbo, 'RespondedWithAlternativeMove');
+        await turbo.alternativeRespondWithMove(alternativeState.asEthersObject, responseState.asEthersObject, alternativeSignature, responseSignature);
+    
+        await eventPromise;
+        expect(emitterWitness).toBeCalled();
+
+        // "challenge should be cancelled
+        expect(await turbo.isChallengeOngoing(channel.id)).toBe(false);
+      });
+
+      it('reverts when the channel is closed', async () => {
+        await runBeforeAlternativeRespond();
+
+        // expired challenge exists at start of game
+        await increaseTime(DURATION.days(2), provider);
+        expect(
+          await turbo.isChannelClosed(channel.id)
+        ).toBe(true);
+    
+        assertRevert(
+          turbo.alternativeRespondWithMove(alternativeState.asEthersObject, responseState.asEthersObject, alternativeSignature, responseSignature),
+          "AlternativeRespondWithMove: channel must be open"
+        );
+        await delay();
+      });
+
+      it('reverts when the responseState is not authorized', async () => {
+        await runBeforeAlternativeRespond();
+
+        assertRevert(
+          turbo.alternativeRespondWithMove(alternativeState.asEthersObject, responseState.asEthersObject, alternativeSignature, alternativeSignature),
+          "AlternativeRespondWithMove: move must be authorized"
+        );
+        await delay();
+      });
+ 
+      it('reverts when the responseState is invalid', async () => {
+        await runBeforeAlternativeRespond();
+
+        const invalidResponseState = state3;
+      
+        const { r: r3, s: s3, v: v3 } = sign(invalidResponseState.toHex(), challenger.privateKey);
+        const invalidResponseSignature = { r: r3, s: s3, v: v3 };
+
+        assertRevert(
+          turbo.alternativeRespondWithMove(alternativeState.asEthersObject, invalidResponseState.asEthersObject, alternativeSignature, invalidResponseSignature),
+          "Invalid transition: turnNum must increase by 1"
+        );
+        await delay();
+      });
+
+      it('reverts when the alternativeState has a lower nonce', async () => {
+        await runBeforeAlternativeRespond();
+
+        const invalidAlternativeState = state0;
+        const invalidResponseState = state1;
+      
+        const { r: r3, s: s3, v: v3 } = sign(invalidAlternativeState.toHex(), challenger.privateKey);
+        const invalidAlternativeSignature = { r: r3, s: s3, v: v3 };
+        const { r: r4, s: s4, v: v4 } = sign(invalidResponseState.toHex(), challenger.privateKey);
+        const invalidResponseSignature = { r: r4, s: s4, v: v4 };
+
+        assertRevert(
+          turbo.alternativeRespondWithMove(invalidAlternativeState.asEthersObject, invalidResponseState.asEthersObject, invalidAlternativeSignature, invalidResponseSignature),
+          "alternativeState must have the same nonce as the challenge state"
         );
         await delay();
       });

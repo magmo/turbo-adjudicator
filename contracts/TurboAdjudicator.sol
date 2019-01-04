@@ -245,6 +245,62 @@ contract TurboAdjudicator {
         outcomes[channel] = updatedOutcome;
     }
 
+    event RespondedWithAlternativeMove(State.StateStruct alternativeResponse);
+    function alternativeRespondWithMove(
+        State.StateStruct memory _alternativeState,
+        State.StateStruct memory _responseState,
+        Signature memory _alternativeSignature,
+        Signature memory _responseSignature
+    )
+      public
+    {
+        address channel = _responseState.channelId();
+        require(
+            !isChannelClosed(channel),
+            "AlternativeRespondWithMove: channel must be open"
+        );
+
+        require(
+            moveAuthorized(_responseState, _responseSignature),
+            "AlternativeRespondWithMove: move must be authorized"
+        );
+
+        uint8[] memory v = new uint8[](2);
+        v[0] = _alternativeSignature.v;
+        v[1] = _responseSignature.v;
+
+        bytes32[] memory r = new bytes32[](2);
+        r[0] = _alternativeSignature.r;
+        r[1] = _responseSignature.r;
+
+        bytes32[] memory s = new bytes32[](2);
+        s[0] = _alternativeSignature.s;
+        s[1] = _responseSignature.s;
+
+
+        require(
+            Rules.validAlternativeRespondWithMove(
+                outcomes[channel].challengeState,
+                _alternativeState,
+                _responseState,
+                v,
+                r,
+                s
+            ),
+            "RespondWithMove: must be a valid response"
+        );
+
+        emit RespondedWithAlternativeMove(_responseState);
+
+        Outcome memory updatedOutcome = Outcome(
+            outcomes[channel].destination,
+            _responseState.resolution,
+            0,
+            _responseState
+        );
+        outcomes[channel] = updatedOutcome;
+    }
+
     // ************************
     // ForceMove Protocol Logic
     // ************************
